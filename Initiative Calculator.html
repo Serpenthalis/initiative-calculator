@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="style.css">
+    <title>Initiative Calculator</title>
+</head>
+<body>
+    <main class="root">
+        <div class="rowContainer">
+            <div class="flexConfiguration">
+                <div class="flexConfigurationTitleBar">
+                    <h3 class="title">Configuration</h3>
+                </div>
+                <form class="configForm" id="configForm">
+                    <label for="fileInput">Image: </label>
+                    <input type="file" id="fileInput" accept="image/*">
+
+                    <label for="cname">Name: </label>
+                    <input type="text" id="cname" required value="">
+
+                    <label for="cmaxhp">Max HP: </label>
+                    <input type="number" id="cmaxhp" required step="1" value="">
+
+                    <label for="ccurrenthp">Current HP: </label>
+                    <input type="number" id="ccurrenthp" required step="1" value="">
+
+                    <label for="cinitiative">Initiative: </label>
+                    <input type="number" id="cinitiative" required step="1" value="">
+
+                    <input class="configButton" type="button" value="Add new character" onclick="addCharacter()">
+                    <input class="configButton" type="button" value="Update selected character" onclick="updateCharacter()">
+                    <input class="configButton" type="button" value="Remove selected character" onclick="removeCharacter()">
+                    <input class="configButton" type="reset"  value="Clear Form">
+                </form>
+            </div>
+            <div class="flexCharacters">
+                <div class="flexCharactersTitleBar">
+                    <h3 class="title">Characters</h3>
+                    <div class="moveButtonContainer">
+                        <input class="moveButton" type="button" value="Move down" onclick="moveDown()">
+                        <input class="moveButton" type="button" value="Move up" onclick="moveUp()">
+                    </div>
+                </div>
+                <div class="charactersHeadlineBar">
+                    <div class="characterEnabled charactersHeadline">Enabled</div>
+                    <div class="characterImageContainer charactersHeadline">Image</div>
+                    <div class="characterName charactersHeadline">Name</div>
+                    <div class="characterHPmax charactersHeadline">Max HP</div>
+                    <div class="characterHPcurrent charactersHeadline">HP</div>
+                    <div class="characterInitiative charactersHeadline">Initiative</div>
+                </div>
+                <div class="flexCharacterList" id="flexCharacterList">
+                    <!-- Characters will be added here -->
+                </div>
+            </div>
+        </div>
+        <div class="rowContainer">
+            <div class="flexPlayOrder">
+                <div class="orderTopBar">
+                    <div class="orderTopBarLeft">
+                        <input class="configButton" type="button" value="Reset turns" onclick="resetTurns()">                        
+                    </div>
+                    <div class="orderTopBarMiddle">
+                        <h3 class="title" id="turnIndicator">
+                            Turn
+                        </h3>
+                        <h3 class="title" id="characterIndicator">
+                            Character
+                        </h3>
+                    </div>
+                    <div class="orderTopBarRight">
+                        <input class="configButton" type="button" value="Advance turn" onclick="advanceTurn()">
+                    </div>                    
+                </div>
+                <div class="orderImageList">
+                    <div class="orderImageListLeft">
+                        <input class="configButtonSquare" type="button" value="-" onclick="showFewerImages()">
+                    </div>
+                    <div class="orderImageListMiddle" id="orderImageListMiddle">
+                    </div>
+                    <div class="orderImageListRight">
+                        <input class="configButtonSquare" type="button" value="+" onclick="showMoreImages()">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="text/javascript">
+        'use strict';
+
+        //Global variables
+        var selectedCharacter; //The character that was selected by the user
+        var currentInitCount = 1; //The current value that will be incremented and compared with the characters' multiples of their initiative
+        var currentTurn = 0;
+        var currentCharacter; //The character who can now take a turn
+        var charactersObject = new Object(); //Internal collection of all characters
+        var numberOfPrePostImages = 4; //The number of images that should appear on either side of the current character in the play order
+        var playOrderCharactersPre = new Array(numberOfPrePostImages); //The last few characters who took their turn before the current character (initialized with length 3)
+        var currentTiedCharacters = []; //If characters are tied, everyone except for the first one will be buffered here and later inserted at the start of the play order
+       
+        class Character
+        {
+            constructor(enabled, imageURL, name, maxHitpoints, hitpoints, initiative)
+            {
+                this.enabled = enabled;
+                this.imageURL = imageURL;
+                this.name = name;
+                this.maxHitpoints = maxHitpoints;
+                this.hitpoints = hitpoints;
+                this.initiative = initiative;
+                this.tieBreaker = Math.random();
+            }
+
+            updateTieBreaker()
+            {
+                this.tieBreaker = Math.random();
+            }
+        }
+
+        function getFormData()
+        {
+            //Get important elements
+            var configForm = document.getElementById("configForm");
+            var flexCharacterList = document.getElementById("flexCharacterList");
+            var formData = new Object();            
+
+            //Check user input and retrieve data from form elements
+            var imageValue = "img/default/questionMark.png";
+            var nameValue;
+            var maxHitpointsValue;
+            var hitpointsValue;
+            var initiativeValue;
+            if (configForm.elements[0].files[0])
+            {
+                //imageValue = "img/" + configForm.elements[0].files[0].name;
+                imageValue = URL.createObjectURL(configForm.elements[0].files[0]);
+            }
+            if  //Null checks for the form elements
+            (
+                configForm.elements[1] &&
+                configForm.elements[2] &&
+                configForm.elements[3] &&
+                configForm.elements[4]
+            )
+            {
+                nameValue = configForm.elements[1].value;
+                maxHitpointsValue = configForm.elements[2].value;
+                hitpointsValue = configForm.elements[3].value;
+                initiativeValue = configForm.elements[4].value;
+
+                if  //Check for empty name and integer values 
+                (configForm.elements[1] !== "" &&
+                    Number.isInteger(parseInt(maxHitpointsValue)) &&
+                    Number.isInteger(parseInt(hitpointsValue)) &&
+                    Number.isInteger(parseInt(initiativeValue))
+                )
+                {                   
+                    //Create new character sub-elements
+                    var enabledCheckbox = document.createElement("INPUT");
+                    enabledCheckbox.setAttribute("type", "checkbox");
+                    enabledCheckbox.setAttribute("checked", "checked");
+                    enabledCheckbox.setAttribute("onchange", "updateCharacterEnabled(this)")
+
+                    var enabledCheckboxContainer = document.createElement("DIV");
+                    enabledCheckboxContainer.setAttribute("class", "characterEnabled characterPart");
+                    enabledCheckboxContainer.appendChild(enabledCheckbox);
+
+                    var image = document.createElement("IMG");
+                    image.setAttribute("class", "characterImage");
+                    image.setAttribute("src", imageValue);
+                    image.setAttribute("alt", "img/default/questionMark.png");
+
+                    var imageContainer = document.createElement("DIV");
+                    imageContainer.setAttribute("class", "characterImageContainer characterPart");
+                    imageContainer.appendChild(image);
+
+                    var name = document.createElement("P");
+                    name.setAttribute("class", "characterName characterPart");
+                    var nameText = document.createTextNode(nameValue);
+                    name.appendChild(nameText);
+
+                    var maxHitpoints = document.createElement("P");
+                    maxHitpoints.setAttribute("class", "characterHPmax characterPart");
+                    var maxHitpointsText = document.createTextNode(maxHitpointsValue);
+                    maxHitpoints.appendChild(maxHitpointsText);
+
+                    var hitpoints = document.createElement("P");
+                    hitpoints.setAttribute("class", "characterHPcurrent characterPart");
+                    var hitpointsText = document.createTextNode(hitpointsValue);
+                    hitpoints.appendChild(hitpointsText);
+
+                    var initiative = document.createElement("P");
+                    initiative.setAttribute("class", "characterInitiative characterPart");
+                    var initiativeText = document.createTextNode(initiativeValue);
+                    initiative.appendChild(initiativeText);
+
+                    //Create dictionary of retrieved values
+                    formData["enabledCheckboxContainer"] = enabledCheckboxContainer;
+                    formData["imageContainer"] = imageContainer;
+                    formData["name"] = name;
+                    formData["maxHitpoints"] = maxHitpoints;
+                    formData["hitpoints"] = hitpoints;
+                    formData["initiative"] = initiative;
+
+                    return formData;                    
+                }
+            }
+            return null;            
+        }
+
+        function copySelectedToConfig()
+        {
+            if (selectedCharacter)
+            {
+                var configForm = document.getElementById("configForm");
+                var characterData = selectedCharacter.children;
+                configForm.elements[0].value = null;
+                configForm.elements[1].value = characterData[1].firstChild.nodeValue;
+                configForm.elements[2].value = characterData[2].firstChild.nodeValue;
+                configForm.elements[3].value = characterData[3].firstChild.nodeValue;
+                configForm.elements[4].value = characterData[4].firstChild.nodeValue;
+            }
+        }
+
+        //This is called when a character needs to be added
+        function addCharacter()
+        {
+            var formData = getFormData();
+
+            if (formData) //Null check
+            {
+                if (!isCharacterNameDuplicate(formData["name"].firstChild.nodeValue))
+                {
+                    //Create new character element
+                    var character = document.createElement("DIV");
+                    character.setAttribute("onclick", "onCharacterClick(this)");
+                    character.setAttribute("class", "character");
+                    character.appendChild(formData["imageContainer"]);
+                    character.appendChild(formData["name"]);
+                    character.appendChild(formData["maxHitpoints"]);
+                    character.appendChild(formData["hitpoints"]);
+                    character.appendChild(formData["initiative"]);
+
+                    var characterRow = document.createElement("DIV");                    
+                    characterRow.setAttribute("class", "characterRow");
+                    characterRow.appendChild(formData["enabledCheckboxContainer"]);
+                    characterRow.appendChild(character);
+
+                    //Append character to character list
+                    flexCharacterList.appendChild(characterRow);
+
+                    //Add character to the list of characters
+                    charactersObject[formData["name"].firstChild.nodeValue] = new Character
+                    (
+                        true,
+                        formData["imageContainer"].firstChild.src,
+                        formData["name"].firstChild.nodeValue,
+                        parseInt(formData["maxHitpoints"].firstChild.nodeValue),
+                        parseInt(formData["hitpoints"].firstChild.nodeValue),
+                        parseInt(formData["initiative"].firstChild.nodeValue)
+                    );
+                }
+            }
+        }
+
+        //This is called when a character needs to be updated
+        function updateCharacter()
+        {
+            var formData = getFormData();
+            if (formData && selectedCharacter)
+            {
+                //Update in characterList
+                var characterImageURL;
+                if (formData["name"].firstChild.nodeValue !== selectedCharacter.children[1])
+                {//Check if name changed
+                    //Create backup of the character image and delete the old character
+                    characterImageURL = charactersObject[selectedCharacter.children[1].firstChild.nodeValue].imageURL;
+                    delete charactersObject[selectedCharacter.children[1].firstChild.nodeValue];
+                }
+
+                //Only updates the image, if an image is selected
+                if (!formData["imageContainer"].firstChild.src.endsWith("questionMark.png"))
+                {
+                    characterImageURL = formData["imageContainer"].firstChild.src;
+                }
+
+                charactersObject[formData["name"].firstChild.nodeValue] = new Character
+                (
+                    true,
+                    characterImageURL,
+                    formData["name"].firstChild.nodeValue,
+                    formData["maxHitpoints"].firstChild.nodeValue,
+                    formData["hitpoints"].firstChild.nodeValue,
+                    formData["initiative"].firstChild.nodeValue
+                );                
+
+                //Update character attributes
+                selectedCharacter.parentNode.replaceChild(formData["enabledCheckboxContainer"], selectedCharacter.parentNode.children[0]);                
+                if (!formData["imageContainer"].firstChild.src.endsWith("questionMark.png"))
+                {
+                    //Only updates the image, if an image is selected
+                    selectedCharacter.replaceChild(formData["imageContainer"], selectedCharacter.children[0]);
+                }
+                selectedCharacter.replaceChild(formData["name"], selectedCharacter.children[1]);
+                selectedCharacter.replaceChild(formData["maxHitpoints"], selectedCharacter.children[2]);
+                selectedCharacter.replaceChild(formData["hitpoints"], selectedCharacter.children[3]);
+                selectedCharacter.replaceChild(formData["initiative"], selectedCharacter.children[4]);
+            }
+        }
+
+        //This is called when a character needs to be removed
+        function removeCharacter()
+        {
+            if (selectedCharacter)
+            {
+                flexCharacterList.removeChild(selectedCharacter.parentNode);            
+                delete charactersObject[selectedCharacter.children[1].firstChild.nodeValue];
+                selectedCharacter = null;
+            }
+        }
+
+        //This is called when a character is clicked
+        function onCharacterClick(clickedCharacter)
+        {
+            if (clickedCharacter === selectedCharacter) //If an already selected character was clicked
+            {
+                selectedCharacter = null;
+                clearSelectedCharacter();
+                document.getElementById("configForm").reset();
+            }
+            else                                        //If any other character was clicked
+            {
+                selectedCharacter = clickedCharacter;
+                clearSelectedCharacter();
+                clickedCharacter.classList.add("characterSelected");
+                clickedCharacter.parentNode.children[0].classList.add("characterSelected");
+                copySelectedToConfig();
+            }
+        }
+
+        //This removes the characterSelected class from all characters
+        function clearSelectedCharacter()
+        {
+            var i;
+            for (i = 0; i < flexCharacterList.childElementCount; i++)
+            {
+                flexCharacterList.children[i].children[0].classList.remove("characterSelected");
+                flexCharacterList.children[i].children[1].classList.remove("characterSelected");
+            }
+        }
+
+        //Returns true if a character with the given name already exists 
+        function isCharacterNameDuplicate(characterName)
+        {
+            var isDuplicate = false;
+            var i;
+            for (let [key, value] of Object.entries(charactersObject))
+            {
+                if (key === characterName)
+                {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+            return isDuplicate;
+        }
+
+        function updateCharacterEnabled(checkbox)
+        {
+            //Toggles the character with the name of the character in the character row
+            charactersObject[checkbox.parentNode.parentNode.children[1].children[1].firstChild.nodeValue].enabled = checkbox.checked;
+        }
+
+        function advanceTurn()
+        {
+            if //Null and empty checks
+            (
+                charactersObject &&
+                Object.keys(charactersObject).length !== 0 &&
+                charactersObject.constructor === Object &&
+                enabledCharacterExists()
+            )
+            {
+                currentTurn++;
+
+                //If there were characters with identical initiative values from last round, these need to be added first
+                var playOrderCharactersPredict = currentTiedCharacters;
+
+                //If there are tied characters left from a previous round, don't calculate a new current character
+                if (playOrderCharactersPredict.length === 0)
+                {
+                    //Now calcualte the current character candidates and sort them
+                    var currentCandidatesArray = calculateCurrentCandidates();
+                    var currentCandidatesArraySorted = breakTie(currentCandidatesArray);
+                    playOrderCharactersPredict = playOrderCharactersPredict.concat(currentCandidatesArraySorted);                    
+                }
+
+                //If there are ties, buffer all except the first character
+                currentTiedCharacters = playOrderCharactersPredict.slice(1, playOrderCharactersPredict.length);
+
+                //Saving the current init count for later
+                var tempInitCount = currentInitCount;                
+
+                //Continue to calculate the predicted characters
+                while (playOrderCharactersPredict.length < numberOfPrePostImages + 1) //Plus one for the current character
+                {
+                    currentCandidatesArray = calculateCurrentCandidates();
+                    currentCandidatesArraySorted = breakTie(currentCandidatesArray);
+                    playOrderCharactersPredict = playOrderCharactersPredict.concat(currentCandidatesArraySorted);
+                }
+                playOrderCharactersPredict = playOrderCharactersPredict.slice(0, numberOfPrePostImages + 1); //Plus one for including the last character
+                currentInitCount = tempInitCount; //Reset current init count to the state before predictions were made
+
+                //Needed to determine the first character image to the left of the current character
+                var previousCharacter = currentCharacter;
+
+                //Update character text
+                updateCurrentCharacter(playOrderCharactersPredict[0]);
+
+                //Update turn counter
+                var turnIndicator = document.getElementById("turnIndicator");
+                turnIndicator.firstChild.nodeValue = "Turn " + currentTurn;
+
+                //Update play order before the current character
+                updatePlayOrderPre(previousCharacter);
+                
+                //Update play order images
+                updatePlayOrderImages(playOrderCharactersPredict);
+            }
+        }
+
+        function calculateCurrentCandidates()
+        {
+            var currentCandidatesArray = [];
+            while (currentCandidatesArray.length === 0)
+            {
+                //Get all characters who could now take their turn      
+                for (const [key, value] of Object.entries(charactersObject))
+                {
+                    if (value.enabled) //Is character enabled?
+                    {
+                        if (currentInitCount % value.initiative === 0) //Is now the characters turn?
+                        {
+                            currentCandidatesArray.push(value);
+                        }
+                    }
+                }
+                currentInitCount++;
+            }
+            return currentCandidatesArray;
+        }
+
+        function breakTie(currentCandidatesArray)
+        {
+            //Tie break by comparison of random numbers
+            var currentCandidatesArraySorted = currentCandidatesArray.sort(function(a, b) {return a.tieBreaker - b.tieBreaker});
+            return currentCandidatesArraySorted;
+        }
+
+        function updateCurrentCharacter(character)
+        {
+            //Update variable
+            currentCharacter = character;
+
+            //Update GUI
+            var characterIndicator = document.getElementById("characterIndicator");
+            characterIndicator.firstChild.nodeValue = currentCharacter.name;
+        }
+
+        function enabledCharacterExists()
+        {
+            for (const [key, value] of Object.entries(charactersObject))
+            {
+                if (value.enabled) //Is character enabled?
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function updatePlayOrderPre(previousCharacter)
+        {
+            //Add new character
+            playOrderCharactersPre.push(previousCharacter); //Is null in turn 1 
+
+            //In case the value increased
+            while (playOrderCharactersPre.length < numberOfPrePostImages)
+            {
+                playOrderCharactersPre = [null].concat(playOrderCharactersPre);
+            }
+            //In case the value decreased
+            playOrderCharactersPre = playOrderCharactersPre.slice
+            (
+                playOrderCharactersPre.length - numberOfPrePostImages, playOrderCharactersPre.length
+            );
+        }
+
+        function updatePlayOrderImages(playOrderCharactersPredict)
+        {
+            var playOrderCharacters = playOrderCharactersPre.concat(playOrderCharactersPredict);
+            var orderImageListMiddle = document.getElementById("orderImageListMiddle");
+
+            //Clear order image list
+            var range = document.createRange();
+            range.selectNodeContents(orderImageListMiddle);
+            range.deleteContents();
+
+            var i;
+            for (i = 0; i < playOrderCharacters.length; i++)
+            {
+                var characterImage = document.createElement("IMG");
+                if (playOrderCharacters[i])
+                {
+                    if (i === numberOfPrePostImages) //Minus one for index, plus one for current character
+                    {
+                        //Draw the image of the current character bigger
+                        characterImage.setAttribute("class", "orderImage currentOrderImage");
+                    }
+                    else
+                    {
+                        //A regular character image
+                        characterImage.setAttribute("class", "orderImage");
+
+                        //Add event listeners for tooltips
+                        characterImage.addEventListener('mouseover', createTip);
+                        characterImage.addEventListener('mouseout', cancelTip);
+                    }
+                    characterImage.setAttribute("src", playOrderCharacters[i].imageURL);
+                    characterImage.setAttribute("title", playOrderCharacters[i].name);                 
+                }
+                else
+                {
+                    //Create dummy if character is undefined
+                    characterImage.setAttribute("class", "orderImage");
+                    characterImage.setAttribute("src", "img/default/questionMark.png");
+                }
+                characterImage.setAttribute("alt", "no img");
+                characterImage.setAttribute("onerror", "this.src='img/default/questionMark.png';");
+                orderImageListMiddle.appendChild(characterImage);
+            }
+        }
+
+        function resetTurns()
+        {
+            currentTurn = 0;
+            currentInitCount = 1;
+            currentTiedCharacters = [];
+            playOrderCharactersPre = new Array(numberOfPrePostImages);
+            currentCharacter = null;
+
+            for (let [key, value] of Object.entries(charactersObject))
+            {
+                value.updateTieBreaker();
+            }
+            advanceTurn();
+        }
+
+        function showFewerImages()
+        {
+            if (currentCharacter)
+            {
+                if (numberOfPrePostImages >= 1)
+                {
+                    numberOfPrePostImages--;
+                    var orderImageListMiddle = document.getElementById("orderImageListMiddle");
+                    orderImageListMiddle.removeChild(orderImageListMiddle.children[0]);
+                    orderImageListMiddle.removeChild(orderImageListMiddle.children[orderImageListMiddle.childElementCount - 1]);
+                }
+            }
+        }
+
+        function showMoreImages()
+        {
+            if (currentCharacter)
+            {
+                numberOfPrePostImages++;
+                var dummyImage = document.createElement("IMG");
+                dummyImage.setAttribute("class", "orderImage");
+                dummyImage.setAttribute("src", "img/default/questionMark.png");
+                dummyImage.setAttribute("alt", "no img");
+                dummyImage.setAttribute("onerror", "this.src='img/default/questionMark.png';");
+                orderImageListMiddle.appendChild(dummyImage);
+                orderImageListMiddle.insertBefore(dummyImage.cloneNode(true), orderImageListMiddle.children[0]);
+            }
+        }
+
+        function moveDown()
+        {
+            if (selectedCharacter)
+            {
+                var characterRow = selectedCharacter.parentNode;
+                var flexCharacterList = characterRow.parentNode;
+                if (characterRow.nextElementSibling)
+                {
+                    flexCharacterList.insertBefore(characterRow, characterRow.nextElementSibling.nextElementSibling);
+                }
+            }
+        }
+
+        function moveUp()
+        {
+            if (selectedCharacter)
+            {
+                var characterRow = selectedCharacter.parentNode;
+                var flexCharacterList = characterRow.parentNode;
+                if (characterRow.previousElementSibling)
+                {
+                    flexCharacterList.insertBefore(characterRow, characterRow.previousElementSibling);
+                }
+            }
+        }
+
+        function createTip(event)
+        {
+            //Removes title and saves it temporarily
+            var title = this.title;
+            this.title = '';
+            this.setAttribute("tooltip", title);
+
+            //Create the wrap for the tooltip
+            var tooltipWrap = document.createElement("div");
+            tooltipWrap.className = 'tooltip';
+            tooltipWrap.appendChild(document.createTextNode(title));
+ 
+            //Adds the tooltip to the html body
+            var firstChild = document.body.firstChild;
+            firstChild.parentNode.insertBefore(tooltipWrap, firstChild);
+            
+            //Get properties of the image and the tooltip
+            var padding = 5;
+            var imageProperties = this.getBoundingClientRect();
+            var tooltipProperties = tooltipWrap.getBoundingClientRect();
+
+
+            //Styling the tooltip box
+            //Calculate where to start to draw the tooltip (left border)
+            var topPos = imageProperties.top - (tooltipProperties.height + padding);
+
+            //Calculate where to start to draw the tooltip (top border)
+            var imageHorizontalMiddlePos = imageProperties.left + (imageProperties.right - imageProperties.left) / 2;
+            var imageLeftBorderPos = imageHorizontalMiddlePos - tooltipProperties.width / 2;
+            
+            //Add style to the tooltip
+            tooltipWrap.setAttribute('style','top:' + topPos + 'px;' + 'left:' + imageLeftBorderPos + 'px;');
+        }
+
+        function cancelTip(event)
+        {
+            //Moves the title back to its attribute
+            var title = this.getAttribute("tooltip");
+            this.title = title;
+            this.removeAttribute("tooltip");
+
+            //Remove everything with the tooltip class
+            document.querySelector(".tooltip").remove();
+        }
+
+        //Fisher-Yates Shuffle according to
+        //https://stackoverflow.com/questions/2450954/how-to-randomize-shuffle-a-javascript-array
+        function shuffleArray(array)
+        {
+            var currentIndex = array.length, temporaryValue, randomIndex;
+
+            // While there remain elements to shuffle...
+            while (0 !== currentIndex)
+            {
+                // Pick a remaining element...
+                randomIndex = Math.floor(Math.random() * currentIndex);
+                currentIndex -= 1;
+
+                // And swap it with the current element.
+                temporaryValue = array[currentIndex];
+                array[currentIndex] = array[randomIndex];
+                array[randomIndex] = temporaryValue;
+            }
+            return array;
+        }
+    </script>
+</body>
+</html>
